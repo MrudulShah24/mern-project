@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const Course = require('../models/Course');
 const { protect } = require('../middleware/authMiddleware');
 const { admin } = require('../middleware/adminMiddleware');
+const courseController = require('../controllers/courseController');
 
 const router = express.Router();
 
@@ -36,6 +37,11 @@ router.get('/', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+/**
+ * GET a single course by ID (public)
+ */
+router.get('/:id', courseController.getCourseById);
 
 /**
  * Get MY enrolled courses (students)

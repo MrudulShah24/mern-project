@@ -94,7 +94,7 @@ const CourseDetails = () => {
       {/* Hero Section with Course Banner */}
       <div 
         className="relative bg-cover bg-center h-80 flex items-center justify-center"
-        style={{ backgroundImage: `url(${course.bannerImage || 'https://via.placeholder.com/1920x400'})` }}
+        style={{ backgroundImage: `url(${course.bannerImage || '/images/placeholders/default-banner.svg'})` }}
       >
         <div className="absolute inset-0 bg-black bg-opacity-60"></div>
         <div className="container mx-auto px-6 relative z-10">
@@ -219,7 +219,7 @@ const CourseDetails = () => {
               {course.instructor ? (
                 <div className="flex items-start space-x-4">
                   <img 
-                    src={course.instructor.avatar || "https://via.placeholder.com/100"} 
+                    src={course.instructor.avatar || "/images/placeholders/default-avatar.svg"} 
                     alt={course.instructor.name || "Instructor"} 
                     className="w-20 h-20 rounded-full object-cover"
                   />
@@ -253,7 +253,7 @@ const CourseDetails = () => {
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 sticky top-6">
               <div className="aspect-video rounded-lg overflow-hidden mb-6">
                 <img 
-                  src={course.thumbnail || "https://via.placeholder.com/640x360"} 
+                  src={course.thumbnail || "/images/placeholders/default-thumbnail.svg"} 
                   alt={course.title} 
                   className="w-full h-full object-cover"
                 />

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRight, PlayCircle } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import api from '../utils/axiosConfig';
 import CourseCard from '../components/CourseCard';
 
@@ -28,17 +28,13 @@ const Home = () => {
           <p className="text-lg md:text-xl max-w-3xl mx-auto mb-8 text-gray-200">
             Join thousands of learners on EduForge and take the next step in your career with our expert-led courses.
           </p>
-          <div className="flex justify-center space-x-4">
+          <div className="flex justify-center">
             <Link
               to="/courses"
               className="px-8 py-4 bg-white text-purple-600 font-bold rounded-full shadow-lg hover:bg-gray-100 transform hover:scale-105 transition"
             >
               Explore Courses
             </Link>
-            <button className="flex items-center px-8 py-4 text-white font-bold rounded-full hover:bg-white/20 transition">
-              <PlayCircle className="w-6 h-6 mr-2" />
-              Watch Intro
-            </button>
           </div>
         </div>
       </section>

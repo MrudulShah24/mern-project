@@ -31,6 +31,14 @@ const CourseList = () => {
     .filter(course => filters.level === 'all' || course.level === filters.level)
     .filter(course => filters.rating === 'all' || (course.rating && course.rating >= parseInt(filters.rating)));
 
+  // Group courses by level
+  const coursesByLevel = {
+    Beginner: filteredCourses.filter(course => course.level === 'Beginner'),
+    Intermediate: filteredCourses.filter(course => course.level === 'Intermediate'),
+    Advanced: filteredCourses.filter(course => course.level === 'Advanced'),
+    Uncategorized: filteredCourses.filter(course => !course.level)
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Header */}
@@ -66,29 +74,54 @@ const CourseList = () => {
           </select>
           <select className="w-full py-3 px-4 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-full focus:outline-none focus:ring-2 focus:ring-purple-500 text-gray-900 dark:text-gray-100" onChange={(e) => setFilters({...filters, level: e.target.value})}>
             <option value="all">All Levels</option>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
+            <option value="Beginner">Beginner</option>
+            <option value="Intermediate">Intermediate</option>
+            <option value="Advanced">Advanced</option>
           </select>
         </div>
       </div>
 
-      {/* Course Grid */}
+      {/* Course Grid - Organized by Level */}
       <main className="container mx-auto px-6 pb-20">
         {loading ? (
           <div className="text-center text-gray-500 dark:text-gray-400">Loading courses...</div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-            {filteredCourses.map((course) => (
-              <CourseCard key={course._id} course={course} />
-            ))}
-          </div>
-        )}
-        {filteredCourses.length === 0 && !loading && (
-          <div className="text-center text-gray-500 dark:text-gray-400 col-span-full">
-            <h3 className="text-2xl font-semibold">No courses found</h3>
-            <p>Try adjusting your search or filters.</p>
-          </div>
+          <>
+            {/* Only show sections that have courses */}
+            {filters.level === 'all' ? (
+              // When no level filter is active, show all levels with section headers
+              <>
+                {Object.entries(coursesByLevel).map(([level, levelCourses]) => 
+                  levelCourses.length > 0 && (
+                    <div key={level} className="mb-12">
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6 border-b border-gray-200 dark:border-gray-700 pb-2">
+                        {level} Courses
+                      </h2>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                        {levelCourses.map((course) => (
+                          <CourseCard key={course._id} course={course} />
+                        ))}
+                      </div>
+                    </div>
+                  )
+                )}
+              </>
+            ) : (
+              // When a level filter is active, show just the filtered courses without section header
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+                {filteredCourses.map((course) => (
+                  <CourseCard key={course._id} course={course} />
+                ))}
+              </div>
+            )}
+
+            {filteredCourses.length === 0 && !loading && (
+              <div className="text-center text-gray-500 dark:text-gray-400 col-span-full">
+                <h3 className="text-2xl font-semibold">No courses found</h3>
+                <p>Try adjusting your search or filters.</p>
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

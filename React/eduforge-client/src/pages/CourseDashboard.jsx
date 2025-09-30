@@ -10,12 +10,9 @@ const CourseDashboard = () => {
   const [course, setCourse] = useState(null);
   const [activeModule, setActiveModule] = useState(0);
   const [activeLesson, setActiveLesson] = useState(null);
-  const [progressPct, setProgressPct] = useState(0);
-  const [completedModuleSet, setCompletedModuleSet] = useState(new Set());
-    const [completedLessons, setCompletedLessons] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState('');
-    const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
 
   useEffect(() => {
       const load = async () => {
@@ -31,42 +28,8 @@ const CourseDashboard = () => {
             return;
           }
           
-          const [courseRes, progressRes] = await Promise.all([
-            api.get(`/courses/${courseId}`),
-            api.get(`/courses/${courseId}/progress`)
-          ]);
+          const courseRes = await api.get(`/courses/${courseId}`);
           setCourse(courseRes.data);
-
-          const percentage = progressRes.data?.percentage ?? 0;
-          setProgressPct(percentage);
-
-          // Handle both formats of progress data
-          if (progressRes.data?.progressDetails) {
-            const details = Array.isArray(progressRes.data.progressDetails) ? progressRes.data.progressDetails : [];
-            const completed = new Set(details.filter(d => d.completed).map(d => d.moduleId));
-            setCompletedModuleSet(completed);
-          }
-          
-          if (progressRes.data?.completedLessons) {
-            // Convert to strings for easier comparison
-            setCompletedLessons(progressRes.data.completedLessons.map(id => id.toString()));
-          } else if (progressRes.data?.progressDetails) {
-            // Extract completed lessons from progress details
-            const completedLessonIds = [];
-            progressRes.data.progressDetails.forEach(module => {
-              if (module.lessons && Array.isArray(module.lessons)) {
-                module.lessons.forEach(lesson => {
-                  if (lesson.completed && lesson.lessonId) {
-                    completedLessonIds.push(lesson.lessonId.toString());
-                  }
-                });
-              }
-            });
-            setCompletedLessons(completedLessonIds);
-          } else {
-            setCompletedLessons([]);
-          }
-
           setLoading(false);
         } catch (err) {
           console.error("Error loading course data:", err);
@@ -82,87 +45,6 @@ const CourseDashboard = () => {
   
   const handleLessonClick = (lesson) => {
     setActiveLesson(lesson);
-  };
-
-  const refreshProgress = async () => {
-    try {
-      const progressRes = await api.get(`/courses/${courseId}/progress`);
-      const percentage = progressRes.data?.percentage ?? 0;
-      setProgressPct(percentage);
-      
-      // Handle both formats of progress data
-      if (progressRes.data?.progressDetails) {
-        const details = Array.isArray(progressRes.data.progressDetails) ? progressRes.data.progressDetails : [];
-        const completed = new Set(details.filter(d => d.completed).map(d => d.moduleId));
-        setCompletedModuleSet(completed);
-      }
-      
-      if (progressRes.data?.completedLessons) {
-        // Convert to strings for easier comparison
-        setCompletedLessons(progressRes.data.completedLessons.map(id => id.toString()));
-      } else if (progressRes.data?.progressDetails) {
-        // Extract completed lessons from progress details
-        const completedLessonIds = [];
-        progressRes.data.progressDetails.forEach(module => {
-          if (module.lessons && Array.isArray(module.lessons)) {
-            module.lessons.forEach(lesson => {
-              if (lesson.completed && lesson.lessonId) {
-                completedLessonIds.push(lesson.lessonId.toString());
-              }
-            });
-          }
-        });
-        setCompletedLessons(completedLessonIds);
-      } else {
-        setCompletedLessons([]);
-      }
-    } catch (err) {
-      console.error("Error refreshing progress:", err);
-      // silent fail for UI
-    }
-  };
-
-  const markModuleComplete = async () => {
-    try {
-      const response = await api.post(`/courses/${courseId}/modules/${activeModule}/complete`);
-      
-      // Update the local state with the new progress
-      if (response.data.percentage) {
-        setProgressPct(response.data.percentage);
-      }
-      
-      if (response.data.progress && Array.isArray(response.data.progress)) {
-        // Convert module IDs for matching (they might be strings or numbers)
-        const completed = new Set();
-        response.data.progress.forEach(item => {
-          if (item.completed) {
-            const id = typeof item.moduleId === 'object' ? 
-              item.moduleId.toString() : 
-              (typeof item.moduleId === 'undefined' ? item.toString() : item.moduleId.toString());
-            completed.add(id);
-          }
-        });
-        setCompletedModuleSet(completed);
-      }
-      
-      // Always refresh to ensure we have the most up-to-date data
-      await refreshProgress();
-      
-      // Check if course is now completed and generate certificate
-      if (response.data.percentage === 100 || response.data.courseProgress === 100) {
-        try {
-          await api.post(`/certificates/generate/${courseId}`);
-          alert('🎉 Congratulations! Course completed and certificate generated!');
-        } catch (certErr) {
-          console.log('Certificate generation:', certErr.response?.data?.message || 'Already generated');
-        }
-      }
-    } catch (err) {
-      console.error('Failed to mark module as complete:', err);
-      // Don't show error to user as we don't want to break the UI
-      // Just refresh the progress instead
-      await refreshProgress();
-    }
   };
 
   if (loading) return (
@@ -203,15 +85,8 @@ const CourseDashboard = () => {
     </div>
   );
 
-  // Check if the current module is completed
-  const moduleCompleted = course && course.modules && course.modules[activeModule] ? 
-    completedModuleSet.has(course.modules[activeModule]._id.toString()) || 
-    completedModuleSet.has(activeModule.toString()) : 
-    false;
-
-  // If progress is 100%, all modules should be considered completed
-  const allModulesCompleted = progressPct >= 100;
-
+  // Remove progress-related checks - just show all functionality
+  
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
       {/* Course Header */}
@@ -226,11 +101,6 @@ const CourseDashboard = () => {
             <div className="flex items-center">
               <Star className="w-5 h-5 mr-2 text-yellow-300" />
               <span>{course.rating?.average || course.rating || '4.5'}</span>
-            </div>
-            <div className="flex items-center">
-              <div className="bg-purple-500/30 rounded-full px-4 py-1.5">
-                <span className="text-sm font-medium">{Math.round(progressPct)}% Complete</span>
-              </div>
             </div>
           </div>
         </div>
@@ -279,36 +149,14 @@ const CourseDashboard = () => {
                               {lesson.type === 'code' && <Code className="w-5 h-5 mr-3 text-orange-500" />}
                               <span className="font-medium">{lesson.title}</span>
                             </div>
-                            <div className="flex items-center">
-                              {lesson._id && completedLessons.includes(lesson._id.toString()) && (
-                                <span className="px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-xs rounded-full mr-2">
-                                  Completed
-                                </span>
-                              )}
-                              <ChevronRight className="w-5 h-5 text-gray-400" />
-                            </div>
+                            <ChevronRight className="w-5 h-5 text-gray-400" />
                           </button>
                         ))}
                       </div>
                     </div>
                   )}
                   
-                  {/* Actions */}
-                  <div className="mt-8 flex flex-wrap gap-3 items-center">
-                    {!allModulesCompleted && (
-                      <button
-                        onClick={markModuleComplete}
-                        disabled={moduleCompleted || allModulesCompleted}
-                        className={`px-6 py-2 rounded-lg text-white ${
-                          moduleCompleted || allModulesCompleted 
-                            ? 'bg-gray-400 cursor-not-allowed' 
-                            : 'bg-green-600 hover:bg-green-700'
-                        }`}
-                      >
-                        {moduleCompleted ? 'Completed' : 'Mark as Complete'}
-                      </button>
-                    )}
-                  </div>
+                  {/* Remove the Mark as Complete button and related logic */}
                 </div>
               )}
               
@@ -327,7 +175,6 @@ const CourseDashboard = () => {
                     lesson={activeLesson} 
                     courseId={courseId}
                     moduleId={course.modules[activeModule]._id}
-                    onComplete={refreshProgress}
                   />
                 </div>
               )}
@@ -336,23 +183,8 @@ const CourseDashboard = () => {
 
           {/* Course Navigation */}
           <div className="lg:col-span-1 space-y-6">
-            {/* Progress Card */}
+            {/* Course Content Navigation */}
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-              <div className="mb-6">
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="font-semibold text-lg text-gray-800 dark:text-gray-200">Your Progress</h3>
-                  <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full font-medium">
-                    {Math.round(progressPct)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
-                  <div
-                    className="bg-gradient-to-r from-purple-600 to-indigo-600 h-3 rounded-full transition-all duration-500 ease-out"
-                    style={{ width: `${progressPct}%` }}
-                  ></div>
-                </div>
-              </div>
-
               <h3 className="font-semibold text-lg mb-4 text-gray-800 dark:text-gray-200">Course Content</h3>
               <div className="space-y-2">
                 {course.modules && Array.isArray(course.modules) && course.modules.map((module, idx) => (
@@ -366,11 +198,7 @@ const CourseDashboard = () => {
                     }`}
                   >
                     <div className="flex items-center">
-                      <span className={`w-7 h-7 flex items-center justify-center rounded-full text-sm mr-3 ${
-                        completedModuleSet.has(idx) 
-                          ? 'bg-green-100 dark:bg-green-900/70 text-green-700 dark:text-green-300' 
-                          : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
-                      }`}>
+                      <span className="w-7 h-7 flex items-center justify-center rounded-full text-sm mr-3 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
                         {idx + 1}
                       </span>
                       <span className="line-clamp-1">{module.title}</span>

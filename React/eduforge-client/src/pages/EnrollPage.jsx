@@ -96,7 +96,7 @@ const EnrollPage = () => {
               </p>
               <img
                 className="w-full h-56 object-cover rounded-lg"
-                src={course.thumbnail || 'https://via.placeholder.com/600x320?text=EduForge'}
+                src={course.thumbnail || '/images/placeholders/default-thumbnail.svg'}
                 alt={course.title}
               />
               <div className="grid grid-cols-3 gap-4 mt-6 text-sm text-gray-600">

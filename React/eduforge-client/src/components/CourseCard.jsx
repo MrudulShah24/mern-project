@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { BookOpen, User, Star, Clock } from 'lucide-react';
+import { getCourseThumbnail, fallbackThumbnail } from '../utils/imageUtils';
 
 const CourseCard = ({ course }) => {
   const { _id, title, description, instructor, thumbnail, duration, rating } = course;
@@ -11,7 +12,15 @@ const CourseCard = ({ course }) => {
   return (
     <Link to={`/courses/${_id}`} className="group block bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-2xl dark:hover:shadow-purple-900/40 transition-shadow duration-300 overflow-hidden transform hover:-translate-y-2">
       <div className="relative">
-        <img src={thumbnail || 'https://via.placeholder.com/400x225'} alt={title} className="w-full h-48 object-cover" />
+        <img 
+          src={getCourseThumbnail(course)} 
+          alt={title} 
+          className="w-full h-48 object-cover"
+          onError={(e) => {
+            e.target.onerror = null;
+            e.target.src = fallbackThumbnail;
+          }}
+        />
         <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors duration-300"></div>
         <div className="absolute top-4 right-4 bg-purple-600 text-white text-xs font-bold px-3 py-1 rounded-full">
           {course.category || 'General'}

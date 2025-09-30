@@ -68,39 +68,93 @@ const CourseRating = ({ courseId }) => {
   const [showReviewForm, setShowReviewForm] = useState(false);
   
   const user = JSON.parse(localStorage.getItem('user')) || {};
+  // Add a retry counter ref to prevent infinite retries
+  const retryCount = React.useRef(0);
+  const maxRetries = 2; // Maximum number of retries
 
   useEffect(() => {
+    let isMounted = true;
+    
     const fetchReviews = async () => {
+      // Only try to fetch if we haven't exceeded retry limit
+      if (retryCount.current >= maxRetries) {
+        setError('Unable to load reviews at this time. Please try again later.');
+        setLoading(false);
+        return;
+      }
+      
       try {
         setLoading(true);
-        const [reviewsResponse, statsResponse, userReviewResponse] = await Promise.all([
-          api.get(`/reviews/courses/${courseId}/reviews?sort=${sortBy}&filter=${filterBy}`),
-          api.get(`/reviews/courses/${courseId}/reviews/stats`),
-          api.get(`/reviews/courses/${courseId}/reviews/user`)
-        ]);
         
-        setReviews(reviewsResponse.data);
-        setStats(statsResponse.data);
+        // Fetch reviews and stats, but handle them separately to avoid Promise.all failing completely
+        let reviewsData = [];
+        let statsData = {
+          averageRating: 0,
+          totalReviews: 0,
+          ratingDistribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 }
+        };
         
-        if (userReviewResponse.data) {
-          setUserReview(userReviewResponse.data);
-          setFormData({
-            rating: userReviewResponse.data.rating,
-            title: userReviewResponse.data.title,
-            content: userReviewResponse.data.content,
-            helpfulness: userReviewResponse.data.helpfulness,
-            courseCompletionPercentage: userReviewResponse.data.courseCompletionPercentage
-          });
+        try {
+          const reviewsResponse = await api.get(`/reviews/courses/${courseId}/reviews?sort=${sortBy}&filter=${filterBy}`);
+          if (isMounted) {
+            reviewsData = reviewsResponse.data;
+            setReviews(reviewsData);
+          }
+        } catch (reviewErr) {
+          console.error('Failed to fetch reviews list:', reviewErr);
+        }
+        
+        try {
+          const statsResponse = await api.get(`/reviews/courses/${courseId}/reviews/stats`);
+          if (isMounted) {
+            statsData = statsResponse.data;
+            setStats(statsData);
+          }
+        } catch (statsErr) {
+          console.error('Failed to fetch review stats:', statsErr);
+        }
+        
+        // Only try to fetch user review if we're authenticated
+        if (user && user._id) {
+          try {
+            const userReviewResponse = await api.get(`/reviews/courses/${courseId}/reviews/user`);
+            
+            if (isMounted && userReviewResponse.data) {
+              setUserReview(userReviewResponse.data);
+              setFormData({
+                rating: userReviewResponse.data.rating,
+                title: userReviewResponse.data.title,
+                content: userReviewResponse.data.content,
+                helpfulness: userReviewResponse.data.helpfulness || 0,
+                courseCompletionPercentage: userReviewResponse.data.courseCompletionPercentage || 0
+              });
+            }
+          } catch (userReviewErr) {
+            console.log('No user review found or error fetching it:', userReviewErr);
+          }
+        }
+        
+        // If at least one request succeeded, we consider it a partial success
+        if (isMounted) {
+          setLoading(false);
+          setError('');
+          retryCount.current = 0; // Reset retry count on success
         }
       } catch (err) {
         console.error('Failed to fetch reviews:', err);
-        setError('Failed to load reviews. Please try again later.');
-      } finally {
-        setLoading(false);
+        if (isMounted) {
+          setError('Failed to load reviews. Please try again later.');
+          retryCount.current += 1;
+          setLoading(false);
+        }
       }
     };
     
     fetchReviews();
+    
+    return () => {
+      isMounted = false; // Clean up to prevent state updates after unmount
+    };
   }, [courseId, sortBy, filterBy]);
   
   const handleInputChange = (e) => {
@@ -204,7 +258,7 @@ const CourseRating = ({ courseId }) => {
     }
   };
   
-  const handleHelpful = async (reviewId, currentValue) => {
+  const handleHelpful = async (reviewId) => {
     try {
       const response = await api.post(`/reviews/courses/${courseId}/reviews/${reviewId}/helpful`);
       
@@ -575,6 +629,7 @@ const CourseRating = ({ courseId }) => {
     </div>
   );
   
+  // Show loading state only on first load
   if (loading && !userReview && reviews.length === 0) {
     return (
       <div className="animate-pulse">
@@ -587,17 +642,60 @@ const CourseRating = ({ courseId }) => {
     );
   }
   
+  // Show error state with fallback UI when error occurs and we have no data
+  if (error && reviews.length === 0) {
+    return (
+      <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-xl">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Student Reviews</h2>
+        
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
+          <div className="text-red-500 dark:text-red-400 mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-2">
+            Unable to Load Reviews
+          </h3>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">
+            {error}
+          </p>
+          <div className="mt-4">
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 rounded-lg text-white font-medium transition-colors"
+            >
+              Try Again
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  
   return (
     <div className="bg-gray-50 dark:bg-gray-900 p-6 rounded-xl">
       <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Student Reviews</h2>
       
       {renderRatingStats()}
       
-      {showReviewForm && renderReviewForm()}
+      {user && user._id && showReviewForm && renderReviewForm()}
       
       {!showReviewForm && userReview && renderUserReview()}
       
       {renderReviewList()}
+      
+      {error && reviews.length > 0 && (
+        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-300">
+          {error}
+          <button 
+            onClick={() => window.location.reload()}
+            className="ml-4 px-2 py-1 bg-red-100 dark:bg-red-800 rounded text-xs font-medium hover:bg-red-200 dark:hover:bg-red-700"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
     </div>
   );
 };

@@ -140,30 +140,6 @@ const Login = () => {
               </button>
             </div>
           </form>
-
-          <div className="mt-6 relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300 dark:border-gray-700"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-gray-50 dark:bg-gray-900 text-gray-500 dark:text-gray-400">Or continue with</span>
-            </div>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-3">
-            <div>
-              <button className="w-full inline-flex justify-center py-3 px-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                <img className="w-5 h-5" src="https://www.svgrepo.com/show/506498/google.svg" alt="Google" />
-                <span className="ml-2">Google</span>
-              </button>
-            </div>
-            <div>
-              <button className="w-full inline-flex justify-center py-3 px-4 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm bg-white dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
-                <img className="w-5 h-5" src="https://www.svgrepo.com/show/512317/github-142.svg" alt="GitHub" />
-                <span className="ml-2">GitHub</span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>

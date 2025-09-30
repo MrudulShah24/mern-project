@@ -177,7 +177,7 @@ const UserProfile = () => {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {enrollments.map((enrollment) => (
                 <div key={enrollment.course._id} className="bg-white dark:bg-gray-800 rounded-xl shadow-md overflow-hidden flex items-center p-4 transition-shadow hover:shadow-lg">
-                  <img src={enrollment.course.thumbnail || 'https://via.placeholder.com/150'} alt={enrollment.course.title} className="w-24 h-24 object-cover rounded-lg" />
+                  <img src={enrollment.course.thumbnail || '/images/placeholders/default-thumbnail.svg'} alt={enrollment.course.title} className="w-24 h-24 object-cover rounded-lg" />
                   <div className="flex-grow ml-4">
                     <h4 className="font-bold text-gray-800 dark:text-white">{enrollment.course.title}</h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">by {enrollment.course.instructor?.name || 'N/A'}</p>

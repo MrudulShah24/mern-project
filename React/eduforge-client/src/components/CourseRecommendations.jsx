@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../utils/axiosConfig';
 import { TrendingUp, Star, Clock, Lightbulb, ArrowUpRight } from 'lucide-react';
+import { getCourseThumbnail, fallbackThumbnail } from '../utils/imageUtils';
 
 const CourseRecommendations = () => {
   const navigate = useNavigate();
@@ -162,9 +163,13 @@ const CourseRecommendations = () => {
               <div className="bg-gray-50 dark:bg-gray-700 rounded-lg overflow-hidden shadow-md hover:shadow-lg transition duration-300 h-full flex flex-col">
                 <div className="relative">
                   <img
-                    src={course.thumbnail || 'https://via.placeholder.com/300x200?text=EduForge'}
+                    src={getCourseThumbnail(course)}
                     alt={course.title}
                     className="w-full h-40 object-cover"
+                    onError={(e) => {
+                      e.target.onerror = null;
+                      e.target.src = fallbackThumbnail;
+                    }}
                   />
                   {course.featured && (
                     <div className="absolute top-2 right-2 bg-yellow-400 text-xs font-bold px-2 py-1 rounded">

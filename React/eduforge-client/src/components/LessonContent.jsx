@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Book, Video, FileText, Code, CheckCircle } from 'lucide-react';
+import { Book, Video, FileText, CheckCircle } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import Quiz from './Quiz';
-import CodeExercise from './CodeExercise';
 import lessonService from '../services/lessonService';
 
 const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
@@ -11,7 +10,6 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
   const [progress, setProgress] = useState({
     videoCompleted: false,
     quizCompleted: false,
-    exerciseCompleted: false,
     quizScore: 0
   });
   
@@ -28,7 +26,6 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
             setProgress({
               videoCompleted: progressData.videoCompleted || false,
               quizCompleted: progressData.quizCompleted || false,
-              exerciseCompleted: progressData.exerciseCompleted || false,
               quizScore: progressData.quizScore || 0
             });
           }
@@ -86,37 +83,18 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
     }
   };
   
-  // Handle code exercise completion
-  const handleExerciseComplete = async () => {
-    try {
-      await lessonService.updateLessonProgress(courseId, moduleId, lesson._id, {
-        exerciseCompleted: true
-      });
-      
-      setProgress(prev => ({
-        ...prev,
-        exerciseCompleted: true
-      }));
-      
-      // Check if all components are completed
-      checkAllCompleted();
-    } catch (err) {
-      console.error('Failed to update exercise progress:', err);
-    }
-  };
+  // No longer need handleExerciseComplete as we've removed coding exercises
   
   // Check if all required components are completed
   const checkAllCompleted = () => {
     // Only check components that exist in the lesson
     const hasVideo = lesson.type === 'video' || !!lesson.videoUrl;
     const hasQuiz = lesson.type === 'quiz' || (!!lesson.quiz && lesson.quiz.questions && lesson.quiz.questions.length > 0);
-    const hasExercise = lesson.type === 'code' || !!lesson.codeExercise;
     
     const videoComplete = !hasVideo || progress.videoCompleted;
     const quizComplete = !hasQuiz || progress.quizCompleted;
-    const exerciseComplete = !hasExercise || progress.exerciseCompleted;
     
-    if (videoComplete && quizComplete && exerciseComplete) {
+    if (videoComplete && quizComplete) {
       // Everything is complete, call the onComplete callback
       onComplete && onComplete();
     }
@@ -193,19 +171,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
           </div>
         );
         
-      case 'code':
-        return (
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6">
-            <CodeExercise 
-              exerciseData={lesson.codeExercise || lesson}
-              courseId={courseId}
-              moduleId={moduleId}
-              lessonId={lesson._id}
-              onComplete={handleExerciseComplete}
-            />
-          </div>
-        );
-        
+
       default:
         // Fallback for mixed content or old format
         return (
@@ -245,19 +211,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
               </div>
             )}
             
-            {/* Code Exercise */}
-            {lesson.codeExercise && (
-              <div className="mt-8">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Coding Exercise</h2>
-                <CodeExercise 
-                  exerciseData={lesson.codeExercise}
-                  courseId={courseId}
-                  moduleId={moduleId}
-                  lessonId={lesson._id}
-                  onComplete={handleExerciseComplete}
-                />
-              </div>
-            )}
+
           </div>
         );
     }
@@ -296,15 +250,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
             </div>
           )}
           
-          {(lesson.type === 'code' || lesson.codeExercise) && (
-            <div className="flex items-center">
-              <Code className="w-4 h-4 mr-1.5" />
-              <span>Coding Exercise{progress.exerciseCompleted && ' • '}</span>
-              {progress.exerciseCompleted && (
-                <CheckCircle className="w-4 h-4 ml-1 text-green-500" />
-              )}
-            </div>
-          )}
+
         </div>
       </div>
       

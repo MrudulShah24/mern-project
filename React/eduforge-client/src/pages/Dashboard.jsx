@@ -147,7 +147,7 @@ const Dashboard = () => {
                         <div className="sm:w-1/3">
                           <img 
                             className="w-full h-48 sm:h-full object-cover" 
-                            src={enrollment.course.thumbnail || 'https://via.placeholder.com/300x200?text=EduForge'} 
+                            src={enrollment.course.thumbnail || '/images/placeholders/default-thumbnail.svg'} 
                             alt={enrollment.course.title} 
                           />
                         </div>
@@ -222,7 +222,6 @@ const Dashboard = () => {
                 <ul className="space-y-3">
                   <li><Link to="/courses" className="flex items-center text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"><ArrowRight className="w-4 h-4 mr-3 text-purple-500"/>Browse All Courses</Link></li>
                   <li><Link to="/profile" className="flex items-center text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"><ArrowRight className="w-4 h-4 mr-3 text-purple-500"/>My Profile</Link></li>
-                  <li><Link to="/my-progress" className="flex items-center text-gray-700 dark:text-gray-300 hover:text-purple-600 dark:hover:text-purple-400 font-medium"><ArrowRight className="w-4 h-4 mr-3 text-purple-500"/>View My Progress</Link></li>
                 </ul>
               </div>
             </div>
