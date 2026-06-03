@@ -1,0 +1,173 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 222.2 84% 4.9%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 212.7 26.8% 83.9%;
+  }
+}
+
+@layer base {
+  body {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    @apply bg-background text-foreground;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Outfit', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer components {
+  .bg-grid {
+    background-image:
+      linear-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+    background-size: 90px 90px;
+    mask-image: radial-gradient(circle at top, rgba(0, 0, 0, 0.65), rgba(0, 0, 0, 0.2) 45%, transparent 75%);
+  }
+
+  .dark .bg-grid {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+  }
+
+  .glass-panel {
+    position: relative;
+    border-radius: 1.5rem;
+    border: 1px solid rgba(245, 158, 11, 0.12);
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(18px);
+    box-shadow: 0 20px 50px rgba(139, 92, 26, 0.05), 0 4px 12px rgba(139, 92, 26, 0.02);
+  }
+
+  .dark .glass-panel {
+    border-color: rgba(251, 191, 36, 0.12);
+    background: rgba(9, 12, 20, 0.6);
+    box-shadow: 0 24px 70px rgba(5, 10, 20, 0.6);
+  }
+
+  .glass-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 1.5rem;
+    border: 1px solid rgba(245, 158, 11, 0.14);
+    background: rgba(255, 255, 255, 0.45);
+    backdrop-filter: blur(28px);
+    box-shadow: 0 20px 50px rgba(139, 92, 26, 0.07), 0 4px 12px rgba(139, 92, 26, 0.03);
+    transition: transform 0.5s ease, box-shadow 0.5s ease;
+  }
+
+  .glass-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.02));
+    opacity: 0.8;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .dark .glass-card {
+    border-color: rgba(251, 191, 36, 0.16);
+    background: rgba(9, 12, 20, 0.5);
+    box-shadow: 0 24px 70px rgba(5, 10, 20, 0.65);
+  }
+
+  .dark .glass-card::before {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0));
+    opacity: 0.6;
+  }
+
+  .glass-card > * {
+    position: relative;
+    z-index: 1;
+  }
+}
+
+.dark .dark-progress .CircularProgressbar-text {
+  fill: #fde68a; /* amber-200 */
+}
+.dark .dark-progress .CircularProgressbar-trail {
+  stroke: #374151; /* gray-700 */
+}
+
+/* ── Custom dark scrollbar for course sidebar ── */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(245, 158, 11, 0.25);
+  border-radius: 9999px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(245, 158, 11, 0.45);
+}
+
+/* ── Forge glass card — deep dark with amber edge ── */
+.forge-glass {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 0 0 1px rgba(245,158,11,0.04) inset,
+    0 24px 60px rgba(0,0,0,0.5);
+  overflow: hidden;
+}
+.forge-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 25% 0%, rgba(245,158,11,0.06), transparent 55%);
+  pointer-events: none;
+}
