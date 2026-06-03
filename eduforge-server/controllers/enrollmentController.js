@@ -195,6 +195,8 @@ exports.updateProgress = async (req, res) => {
     // Update last accessed timestamp
     enrollment.lastAccessedAt = new Date();
 
+    enrollment.markModified('progress');
+    enrollment.markModified('completedLessons');
     await enrollment.save();
     
     // Check if course is completed and auto-generate certificate

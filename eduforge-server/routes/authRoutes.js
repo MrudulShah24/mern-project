@@ -1,14 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const { registerUser, loginUser } = require('../controllers/authController');
+const validate = require('../middleware/validationMiddleware');
+const { registerSchema, loginSchema } = require('../utils/schemas');
 
 const passport = require('passport');
 
 // This line simply points the /register URL to your registerUser function
-router.post('/register', registerUser);
+router.post('/register', validate(registerSchema), registerUser);
 
 // This line points the /login URL to your loginUser function
-router.post('/login', loginUser);
+router.post('/login', validate(loginSchema), loginUser);
 
 // @desc    Auth with Google
 // @route   GET /api/auth/google

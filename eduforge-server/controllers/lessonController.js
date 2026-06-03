@@ -3,6 +3,70 @@ const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 const mongoose = require('mongoose');
 
+// Centralized progress synchronization helper
+const syncProgressAndSave = async (enrollment, courseId, userId) => {
+  const course = await Course.findById(courseId);
+  if (course) {
+    const totalLessons = course.modules.reduce((acc, m) => acc + (m.lessons ? m.lessons.length : 0), 0);
+    
+    // Sync completedLessons flat array from progress subdocuments
+    const completedLessonIds = [];
+    enrollment.progress.forEach(moduleProg => {
+      if (moduleProg.lessons) {
+        moduleProg.lessons.forEach(lessonProg => {
+          if (lessonProg.completed) {
+            completedLessonIds.push(lessonProg.lessonId.toString());
+          }
+        });
+      }
+    });
+
+    enrollment.completedLessons = completedLessonIds;
+    
+    // Update progressPercentage on enrollment
+    const completedCount = completedLessonIds.length;
+    enrollment.progressPercentage = totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+    // Sync back to Course model enrolledStudents progressPercentage
+    if (!course.enrolledStudents) {
+      course.enrolledStudents = [];
+    }
+
+    let studentRecord = course.enrolledStudents.find(
+      s => s.student && s.student.toString() === userId.toString()
+    );
+
+    if (!studentRecord) {
+      studentRecord = {
+        student: userId,
+        enrolledAt: enrollment.createdAt || new Date(),
+        progressPercentage: enrollment.progressPercentage,
+        progress: []
+      };
+      course.enrolledStudents.push(studentRecord);
+    }
+
+    studentRecord.progressPercentage = enrollment.progressPercentage;
+    
+    // Keep course-level student module completion list in sync
+    studentRecord.progress = course.modules.map((mod, idx) => {
+      const modProg = enrollment.progress.find(p => p.moduleId.toString() === mod._id.toString());
+      return {
+        moduleId: idx,
+        completed: modProg ? modProg.completed : false,
+        completedAt: modProg ? modProg.completedAt : undefined
+      };
+    });
+    
+    await course.save();
+  }
+
+  // Force deep serialization updates on nested arrays
+  enrollment.markModified('progress');
+  enrollment.markModified('completedLessons');
+  await enrollment.save();
+};
+
 // Get lesson content with progress
 exports.getLessonContent = async (req, res) => {
   try {
@@ -101,6 +165,10 @@ exports.updateLessonProgress = async (req, res) => {
       moduleProgress = enrollment.progress[enrollment.progress.length - 1];
     }
 
+    if (!moduleProgress.lessons) {
+      moduleProgress.lessons = [];
+    }
+
     // Find or initialize lesson progress
     let lessonProgress = moduleProgress.lessons.find(l => 
       l.lessonId.toString() === lessonId.toString()
@@ -171,16 +239,8 @@ exports.updateLessonProgress = async (req, res) => {
       moduleProgress.completedAt = new Date();
     }
 
-    // Calculate overall course progress
-    const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
-    const completedLessons = enrollment.progress.reduce((acc, m) => {
-      return acc + m.lessons.filter(l => l.completed).length;
-    }, 0);
-    
-    enrollment.progressPercentage = Math.round((completedLessons / totalLessons) * 100);
-
-    // Save the enrollment with updated progress
-    await enrollment.save();
+    // Re-calculate, sync legacy fields, sync course student record, and save enrollment
+    await syncProgressAndSave(enrollment, courseId, userId);
 
     res.json({ 
       message: 'Progress updated successfully',
@@ -221,6 +281,10 @@ exports.markLessonComplete = async (req, res) => {
         lessons: []
       });
       moduleProgress = enrollment.progress[enrollment.progress.length - 1];
+    }
+
+    if (!moduleProgress.lessons) {
+      moduleProgress.lessons = [];
     }
 
     // Find or initialize lesson progress
@@ -276,28 +340,8 @@ exports.markLessonComplete = async (req, res) => {
       moduleProgress.completedAt = new Date();
     }
 
-    // Calculate overall course progress
-    const totalLessons = course.modules.reduce((acc, m) => acc + m.lessons.length, 0);
-    const completedLessons = enrollment.progress.reduce((acc, m) => {
-      return acc + m.lessons.filter(l => l.completed).length;
-    }, 0);
-    
-    enrollment.progressPercentage = Math.round((completedLessons / totalLessons) * 100);
-
-    // Save the enrollment with updated progress
-    await enrollment.save();
-
-    // Update Course model progress too
-    const courseRecord = await Course.findById(courseId);
-    const studentRecord = courseRecord.enrolledStudents.find(
-      s => s.student.toString() === userId.toString()
-    );
-    
-    if (studentRecord) {
-      // Update progress in Course model
-      studentRecord.progressPercentage = enrollment.progressPercentage;
-      await courseRecord.save();
-    }
+    // Re-calculate, sync legacy fields, sync course student record, and save enrollment
+    await syncProgressAndSave(enrollment, courseId, userId);
 
     res.json({ 
       message: 'Lesson marked as complete',
@@ -431,6 +475,10 @@ exports.submitQuiz = async (req, res) => {
       moduleProgress = enrollment.progress[enrollment.progress.length - 1];
     }
 
+    if (!moduleProgress.lessons) {
+      moduleProgress.lessons = [];
+    }
+
     if (lessonId) {
       // Quiz is part of a lesson
       let lessonProgress = moduleProgress.lessons.find(l => l.lessonId.toString() === lessonId.toString());
@@ -490,25 +538,8 @@ exports.submitQuiz = async (req, res) => {
       moduleProgress.completedAt = new Date();
     }
 
-    // Calculate overall course progress
-    const totalLessons = course.modules.reduce((acc, m) => acc + (m.lessons ? m.lessons.length : 0), 0);
-    const completedLessonsCount = enrollment.progress.reduce((acc, m) => {
-      return acc + (m.lessons ? m.lessons.filter(l => l.completed).length : 0);
-    }, 0);
-    
-    enrollment.progressPercentage = totalLessons > 0 ? Math.round((completedLessonsCount / totalLessons) * 100) : 0;
-
-    await enrollment.save();
-
-    // Update Course model student record progress
-    const studentRecord = course.enrolledStudents.find(
-      s => s.student.toString() === userId.toString()
-    );
-    
-    if (studentRecord) {
-      studentRecord.progressPercentage = enrollment.progressPercentage;
-      await course.save();
-    }
+    // Re-calculate, sync legacy fields, sync course student record, and save enrollment
+    await syncProgressAndSave(enrollment, courseId, userId);
 
     res.json({
       score,
@@ -721,6 +752,10 @@ exports.submitCode = async (req, res) => {
           moduleProgress = enrollment.progress[enrollment.progress.length - 1];
         }
         
+        if (!moduleProgress.lessons) {
+          moduleProgress.lessons = [];
+        }
+        
         // Find or initialize lesson progress
         let lessonProgress = moduleProgress.lessons.find(l => 
           l.lessonId.toString() === lessonId.toString()
@@ -739,7 +774,7 @@ exports.submitCode = async (req, res) => {
         }
       }
       
-      await enrollment.save();
+      await syncProgressAndSave(enrollment, courseId, userId);
       
       res.json({
         passed,

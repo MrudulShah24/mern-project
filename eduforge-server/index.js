@@ -1,6 +1,9 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const mongoSanitize = require('./middleware/mongoSanitize');
 require('dotenv').config();
 
 const courseRoutes = require('./routes/courseRoutes');
@@ -18,8 +21,26 @@ const adminRoutes = require('./routes/adminRoutes');
 
 const session = require('express-session');
 const passport = require('./config/passport');
+const errorHandler = require('./middleware/errorMiddleware');
 
 const app = express();
+
+// Set security HTTP headers
+app.use(helmet({
+  contentSecurityPolicy: false, // Turn off for local development where client is separate, or customize if deploying
+}));
+
+// Limit requests from same IP (DDoS/Brute force protection)
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests from this IP, please try again after 15 minutes' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiter to auth routes
+app.use('/api/auth/', limiter);
 
 // MODIFY THIS ONE LINE
 app.use(cors({
@@ -28,6 +49,9 @@ app.use(cors({
 }));
 
 app.use(express.json());
+
+// Data sanitization against NoSQL query injection (must run after express.json)
+app.use(mongoSanitize());
 
 app.use(session({
   secret: process.env.JWT_SECRET || 'secret',
@@ -50,6 +74,9 @@ app.use('/api/discussions', discussionRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/lessons', lessonRoutes);
 app.use('/api/admin', adminRoutes);
+
+// Centralized error handler (must be last middleware)
+app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 

@@ -5,6 +5,14 @@ import { BookOpen, ArrowRight, TrendingUp, Award, CheckCircle, Star } from "luci
 import { CircularProgressbar, buildStyles } from 'react-circular-progressbar';
 import 'react-circular-progressbar/dist/styles.css';
 import CourseRecommendations from "../components/CourseRecommendations";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+const getLocalDateString = (date) => {
+  const d = new Date(date);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 const StatCard = ({ icon, label, value, color }) => {
   const colorClasses = {
@@ -46,6 +54,8 @@ const Dashboard = () => {
     coursesCompleted: 0,
     certificatesEarned: 0,
   });
+  const [weeklyActivity, setWeeklyActivity] = useState([]);
+  const [categoryDistribution, setCategoryDistribution] = useState([]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -94,6 +104,47 @@ const Dashboard = () => {
           coursesCompleted: completed,
           certificatesEarned: completed,
         });
+
+        // 1. Calculate weekly activity data (lessons completed in the last 7 days)
+        const last7Days = [];
+        for (let i = 6; i >= 0; i--) {
+          const d = new Date();
+          d.setDate(d.getDate() - i);
+          const label = d.toLocaleDateString("en-US", { weekday: "short" });
+          const dateStr = getLocalDateString(d); // YYYY-MM-DD in local time
+          last7Days.push({ label, dateStr, count: 0 });
+        }
+
+        // 2. Calculate category counts
+        const categoriesMap = {};
+
+        progressResults.forEach(({ courseId, progress }) => {
+          const enrollment = validEnrollments.find(e => e.course._id === courseId);
+          if (enrollment && enrollment.course && enrollment.course.category) {
+            const cat = enrollment.course.category;
+            categoriesMap[cat] = (categoriesMap[cat] || 0) + 1;
+          }
+
+          if (progress && Array.isArray(progress.progressDetails)) {
+            progress.progressDetails.forEach(mod => {
+              if (Array.isArray(mod.lessons)) {
+                mod.lessons.forEach(les => {
+                  if (les.completed && les.completedAt) {
+                    const compDate = getLocalDateString(les.completedAt); // local timezone match
+                    const dayItem = last7Days.find(item => item.dateStr === compDate);
+                    if (dayItem) {
+                      dayItem.count += 1;
+                    }
+                  }
+                });
+              }
+            });
+          }
+        });
+
+        setWeeklyActivity(last7Days.map(item => ({ name: item.label, Lessons: item.count })));
+        setCategoryDistribution(Object.keys(categoriesMap).map(cat => ({ name: cat, value: categoriesMap[cat] })));
+
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
       } finally {
@@ -222,6 +273,67 @@ const Dashboard = () => {
                   <li><Link to="/courses" className="flex items-center text-gray-700 dark:text-gray-300 hover:text-amber-600 dark:hover:text-amber-300 font-medium"><ArrowRight className="w-4 h-4 mr-3 text-amber-500"/>Browse All Courses</Link></li>
                   <li><Link to="/profile" className="flex items-center text-gray-700 dark:text-gray-300 hover:text-amber-600 dark:hover:text-amber-300 font-medium"><ArrowRight className="w-4 h-4 mr-3 text-amber-500"/>My Profile</Link></li>
                 </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Learning Analytics Charts */}
+        <div className="mt-12 mb-8">
+          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6">Learning Analytics</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Area Chart: Learning Activity */}
+            <div className="glass-panel p-6 shadow-md rounded-2xl relative overflow-hidden bg-white/40 dark:bg-slate-900/40 backdrop-blur-md border border-amber-100/30 dark:border-amber-500/10">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.02),_transparent_60%)] pointer-events-none" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Lessons Completed (This Week)</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height={250}>
+                  <AreaChart data={weeklyActivity}>
+                    <defs>
+                      <linearGradient id="colorLessons" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#f59e0b" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="name" stroke="#9CA3AF" tickLine={false} axisLine={false} />
+                    <YAxis stroke="#9CA3AF" tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 41, 59, 0.85)', borderRadius: '12px', border: '1px solid rgba(245,158,11,0.2)', color: '#fff' }} />
+                    <Area type="monotone" dataKey="Lessons" stroke="#f59e0b" strokeWidth={2} fillOpacity={1} fill="url(#colorLessons)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Pie Chart: Skill Distribution */}
+            <div className="glass-panel p-6 shadow-md rounded-2xl relative overflow-hidden bg-white/40 dark:bg-slate-900/40 backdrop-blur-md border border-amber-100/30 dark:border-amber-500/10">
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(245,158,11,0.02),_transparent_60%)] pointer-events-none" />
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4">Skill Distribution</h3>
+              <div className="h-64">
+                {categoryDistribution.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={250}>
+                    <PieChart>
+                      <Pie
+                        data={categoryDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        paddingAngle={5}
+                        dataKey="value"
+                      >
+                        {categoryDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={['#f59e0b', '#fb923c', '#f472b6', '#38bdf8', '#818cf8'][index % 5]} />
+                        ))}
+                      </Pie>
+                      <Tooltip contentStyle={{ backgroundColor: 'rgba(30, 41, 59, 0.85)', borderRadius: '12px', border: '1px solid rgba(245,158,11,0.2)', color: '#fff' }} />
+                      <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                    <p className="text-sm">No courses enrolled yet to build skill distribution.</p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

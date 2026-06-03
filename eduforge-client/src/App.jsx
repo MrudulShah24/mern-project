@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from './context/ThemeContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Navbar from './components/Navbar';
+import AIStudyBuddy from './components/AIStudyBuddy';
 
 import Home from './pages/Home';
 import Register from './pages/Register';
@@ -55,6 +56,7 @@ function App() {
               <Route path="/admin" element={<ProtectedRoute role="admin"><AdminPanel /></ProtectedRoute>} />
             </Routes>
           </div>
+          <AIStudyBuddy />
         </div>
       </Router>
     </ThemeProvider>

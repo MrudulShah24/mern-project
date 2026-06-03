@@ -15,12 +15,31 @@ exports.generateCertificate = async (req, res) => {
       return res.status(404).json({ error: 'Course not found' });
     }
 
-    const studentRecord = course.enrolledStudents.find(
-      s => s.student.toString() === userId.toString()
+    let studentRecord = course.enrolledStudents.find(
+      s => s.student && s.student.toString() === userId.toString()
     );
 
     if (!studentRecord) {
-      return res.status(400).json({ error: 'You are not enrolled in this course' });
+      const Enrollment = require('../models/Enrollment');
+      const enrollment = await Enrollment.findOne({ user: userId, course: courseId });
+      if (!enrollment) {
+        return res.status(400).json({ error: 'You are not enrolled in this course' });
+      }
+
+      // Recreate missing course studentRecord from enrollment data
+      studentRecord = {
+        student: userId,
+        enrolledAt: enrollment.createdAt || new Date(),
+        progressPercentage: enrollment.progressPercentage,
+        progress: enrollment.progress.map((p, idx) => ({
+          moduleId: idx,
+          completed: p.completed,
+          completedAt: p.completedAt
+        }))
+      };
+      
+      course.enrolledStudents.push(studentRecord);
+      await course.save();
     }
 
     // Check if already has certificate

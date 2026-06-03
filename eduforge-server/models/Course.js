@@ -117,6 +117,22 @@ const courseSchema = new mongoose.Schema({
   certificateAvailable: { type: Boolean, default: true },
   certificateTemplate: { type: String }, // Template ID for certificate
   enrolledCount: { type: Number, default: 0 }, // Number of students enrolled
+  enrolledStudents: [{
+    student: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    enrolledAt: { type: Date, default: Date.now },
+    progressPercentage: { type: Number, default: 0 },
+    progress: [{
+      moduleId: { type: mongoose.Schema.Types.Mixed },
+      completed: { type: Boolean, default: false },
+      completedAt: { type: Date }
+    }],
+    completedAt: { type: Date },
+    certificate: {
+      issued: { type: Boolean, default: false },
+      issuedAt: { type: Date },
+      certificateId: { type: String }
+    }
+  }],
   status: { 
     type: String, 
     enum: ['draft', 'published', 'archived'], 

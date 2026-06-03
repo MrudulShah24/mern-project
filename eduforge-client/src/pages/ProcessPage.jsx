@@ -1,7 +1,7 @@
 // src/pages/ProgressPage.jsx
 import React, { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import axios from 'axios';
+import api from '../utils/axiosConfig';
 
 const ProgressPage = () => {
   const { courseId } = useParams();
@@ -12,7 +12,7 @@ const ProgressPage = () => {
     // ⚠️ Replace with logged-in user ID from auth context
     const userId = "replace_with_logged_in_user_id";
 
-    axios.get(`http://localhost:5000/api/enrollments/${userId}`)
+    api.get(`/enrollments/${userId}`)
       .then((res) => {
         const enrolled = res.data.find(e => e.course._id === courseId);
         if (enrolled) {
@@ -25,8 +25,8 @@ const ProgressPage = () => {
 
   const handleProgressUpdate = async () => {
     try {
-      const updated = await axios.put(
-        `http://localhost:5000/api/enrollments/${enrollment._id}`,
+      const updated = await api.put(
+        `/enrollments/${enrollment._id}`,
         { progress }
       );
       setEnrollment(updated.data);

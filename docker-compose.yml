@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: eduforge_db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - eduforge-network
+
+  backend:
+    build: ./eduforge-server
+    container_name: eduforge_backend
+    ports:
+      - "5000:5000"
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/eduforgeDB
+      - PORT=5000
+      - JWT_SECRET=yourSuperSecretKey
+      - GOOGLE_CLIENT_ID=yourGoogleClientId
+      - GOOGLE_CLIENT_SECRET=yourGoogleClientSecret
+      - GOOGLE_CALLBACK_URL=http://localhost:5000/api/auth/google/callback
+    depends_on:
+      - mongodb
+    networks:
+      - eduforge-network
+
+  frontend:
+    build: ./eduforge-client
+    container_name: eduforge_frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://localhost:5000/api
+    depends_on:
+      - backend
+    networks:
+      - eduforge-network
+
+volumes:
+  mongo_data:
+
+networks:
+  eduforge-network:
+    driver: bridge
