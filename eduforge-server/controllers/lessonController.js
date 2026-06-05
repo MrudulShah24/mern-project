@@ -2,6 +2,8 @@ const Course = require('../models/Course');
 const User = require('../models/User');
 const Enrollment = require('../models/Enrollment');
 const mongoose = require('mongoose');
+const codeExecutor = require('../utils/codeExecutor');
+
 
 // Centralized progress synchronization helper
 const syncProgressAndSave = async (enrollment, courseId, userId) => {
@@ -693,35 +695,136 @@ exports.submitCode = async (req, res) => {
       return res.status(404).json({ error: 'No code exercise found for this lesson' });
     }
 
-    // Run the test cases against the submitted code
-    // This would typically involve a code execution service
-    // For demonstration, we'll use a simple check against expected output
+    // Run the test cases against the submitted code in the Secure Coding Sandbox
     let passed = false;
     let output = '';
     
     try {
-      // Simulated code evaluation - this would be replaced with actual code execution
-      // In a real implementation, this would call a secure code execution service
-      
-      // For demonstration, check if the code contains expected solution patterns
+      // Check expected patterns and avoid patterns first
       const expectedPatterns = lesson.codeExercise.expectedPatterns || [];
       const avoidPatterns = lesson.codeExercise.avoidPatterns || [];
+      const language = lesson.codeExercise.language || 'javascript';
       
-      // Check if code includes all expected patterns
-      const includesAllExpected = expectedPatterns.every(pattern => 
-        code.includes(pattern)
-      );
+      // Clean comments to avoid false keyword matching in comments
+      let cleanCode = code;
+      if (language.toLowerCase() === 'javascript') {
+        cleanCode = code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*/g, '');
+      } else if (language.toLowerCase() === 'python') {
+        cleanCode = code.replace(/#.*/g, '');
+      }
       
-      // Check if code avoids all patterns to avoid
+      // Check if it's the default dummy patterns array from the generator
+      const isDefaultDummyPatterns = expectedPatterns.length === 3 && 
+                                     expectedPatterns.includes('function') && 
+                                     expectedPatterns.includes('return') && 
+                                     expectedPatterns.includes('console.log');
+      
+      let includesAllExpected = true;
+      if (expectedPatterns.length > 0) {
+        if (isDefaultDummyPatterns && language.toLowerCase() !== 'javascript') {
+          if (language.toLowerCase() === 'python') {
+            // Check for python equivalent of function
+            includesAllExpected = cleanCode.includes('def');
+          } else {
+            // For other languages (html, css, java, etc.), bypass the JS-specific checklist
+            includesAllExpected = true;
+          }
+        } else {
+          includesAllExpected = expectedPatterns.every(pattern => cleanCode.includes(pattern));
+        }
+      }
+      
       const avoidsAllBadPatterns = avoidPatterns.every(pattern => 
-        !code.includes(pattern)
+        !cleanCode.includes(pattern)
       );
       
-      passed = includesAllExpected && avoidsAllBadPatterns;
-      
-      output = passed 
-        ? 'All tests passed successfully!' 
-        : 'Some tests failed. Please check your solution.';
+      if (!includesAllExpected) {
+        passed = false;
+        const displayPatterns = isDefaultDummyPatterns && language.toLowerCase() === 'python' ? ['def'] : expectedPatterns;
+        output = `Code patterns check failed: Make sure you use the required keywords/expressions (e.g. ${displayPatterns.join(', ')}).`;
+      } else if (!avoidsAllBadPatterns) {
+        passed = false;
+        const violated = avoidPatterns.filter(pattern => cleanCode.includes(pattern));
+        output = `Code patterns check failed: Please remove restricted keywords/expressions (e.g. ${violated.join(', ')}).`;
+      } else {
+        
+        // Baseline execution to check syntax/runtime errors
+        const baseRun = await codeExecutor.execute(code, language);
+        if (!baseRun.success) {
+          passed = false;
+          output = `Runtime/Syntax Error:\n${baseRun.error}`;
+        } else {
+          // Verify test cases
+          const testCases = lesson.codeExercise.testCases || [];
+          let failedTestCaseIndex = -1;
+          let testCaseError = '';
+          
+          for (let i = 0; i < testCases.length; i++) {
+            const tc = testCases[i];
+            const isDummy = !tc.input || 
+                            !tc.expectedOutput || 
+                            tc.input.includes('test input') || 
+                            tc.expectedOutput.includes('expected output');
+            
+            if (isDummy) {
+              // Dummy test case is considered passed if baseline code executed without errors
+              continue;
+            }
+            
+            // Execute real test case
+            let tcRun;
+            if (language.toLowerCase() === 'javascript') {
+              // Append input as expression to JS code to evaluate return value
+              const testCode = `${code}\n;(${tc.input});`;
+              tcRun = await codeExecutor.execute(testCode, language);
+            } else {
+              // Pass input as stdin for Python
+              tcRun = await codeExecutor.execute(code, language, tc.input);
+            }
+            
+            if (!tcRun.success) {
+              failedTestCaseIndex = i;
+              testCaseError = `Runtime error on test case ${i + 1}: ${tcRun.error}`;
+              break;
+            }
+            
+            const actualVal = tcRun.result !== undefined ? String(tcRun.result).trim() : tcRun.output.trim();
+            const expectedVal = tc.expectedOutput.trim();
+            
+            // Allow matching of either the stdout print or the returned value
+            const stdoutMatch = tcRun.output.trim() === expectedVal;
+            const returnMatch = String(tcRun.result).trim() === expectedVal;
+            const anyMatch = stdoutMatch || returnMatch;
+            
+            if (!anyMatch) {
+              failedTestCaseIndex = i;
+              if (tc.hidden) {
+                testCaseError = `Failed a hidden test case.`;
+              } else {
+                let actualMsg = '';
+                if (tcRun.output.trim()) {
+                  actualMsg += `Stdout: "${tcRun.output.trim()}"`;
+                }
+                if (tcRun.result !== undefined) {
+                  if (actualMsg) actualMsg += ', ';
+                  actualMsg += `Returned: ${String(tcRun.result)}`;
+                }
+                testCaseError = `Failed test case ${i + 1}:\nInput: ${tc.input}\nExpected: ${tc.expectedOutput}\nActual: ${actualMsg || 'No output/return value'}`;
+              }
+              break;
+            }
+          }
+          
+          if (failedTestCaseIndex === -1) {
+            passed = true;
+            output = `All tests passed successfully!\n\nConsole Output:\n${baseRun.output || '(No console output)'}`;
+          } else {
+            passed = false;
+            output = testCaseError;
+          }
+        }
+      }
+
         
       // Save the submission
       if (!enrollment.codeSubmissions) {
@@ -800,26 +903,21 @@ exports.runCode = async (req, res) => {
   try {
     const { code, language } = req.body;
     
-    // This would typically call a secure code execution service
-    // For demonstration purposes, we're simulating execution
-    
-    let output = '';
-    
-    switch(language.toLowerCase()) {
-      case 'javascript':
-        output = 'JavaScript code executed successfully!\nConsole output would appear here.';
-        break;
-      case 'python':
-        output = 'Python code executed successfully!\n>>> Output would appear here.';
-        break;
-      case 'java':
-        output = 'Java code compiled and executed successfully!\nOutput would appear here.';
-        break;
-      default:
-        output = `${language} code executed successfully!\nOutput would appear here.`;
+    if (!code) {
+      return res.status(400).json({ error: 'Code is required' });
     }
     
-    res.json({ output });
+    const result = await codeExecutor.execute(code, language || 'javascript');
+    
+    if (result.success) {
+      res.json({ 
+        output: result.output || 'Code executed successfully with no console output.' 
+      });
+    } else {
+      res.json({ 
+        output: result.output ? `${result.output}\n\nError: ${result.error}` : `Error: ${result.error}` 
+      });
+    }
   } catch (err) {
     console.error('Error running code:', err);
     res.status(500).json({ error: 'Failed to run code: ' + err.message });

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Book, Video, FileText, CheckCircle, Zap } from 'lucide-react';
+import { Book, Video, FileText, CheckCircle, Zap, Code } from 'lucide-react';
 import VideoPlayer from './VideoPlayer';
 import Quiz from './Quiz';
+import CodeExercise from './CodeExercise';
 import lessonService from '../services/lessonService';
+
 
 const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
   const [loading, setLoading] = useState(false);
@@ -12,6 +14,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
   const [progress, setProgress] = useState({
     videoCompleted: false,
     quizCompleted: false,
+    exerciseCompleted: false,
     quizScore: 0,
     completed: false
   });
@@ -32,6 +35,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
             setProgress({
               videoCompleted: progressData.videoCompleted || false,
               quizCompleted: progressData.quizCompleted || false,
+              exerciseCompleted: progressData.exerciseCompleted || false,
               quizScore: progressData.quizScore || 0,
               completed: progressData.completed || false
             });
@@ -49,13 +53,31 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
     }
   }, [courseId, moduleId, lesson]);
 
+  const checkAllCompleted = (updatedProgress = {}) => {
+    const nextProgress = { ...progress, ...updatedProgress };
+    const hasVideo = lessonData.type === 'video' || !!lessonData.videoUrl;
+    const hasQuiz = lessonData.type === 'quiz' || (!!lessonData.quiz && lessonData.quiz.questions && lessonData.quiz.questions.length > 0);
+    const hasExercise = !!lessonData.codeExercise;
+    
+    const videoComplete = !hasVideo || nextProgress.videoCompleted;
+    const quizComplete = !hasQuiz || nextProgress.quizCompleted;
+    const exerciseComplete = !hasExercise || nextProgress.exerciseCompleted;
+    
+    if (videoComplete && quizComplete && exerciseComplete) {
+      onComplete && onComplete();
+    }
+  };
+
   const handleVideoComplete = async () => {
     try {
       await lessonService.updateLessonProgress(courseId, moduleId, lessonData._id, {
         videoCompleted: true
       });
-      setProgress(prev => ({ ...prev, videoCompleted: true }));
-      checkAllCompleted();
+      setProgress(prev => {
+        const next = { ...prev, videoCompleted: true };
+        checkAllCompleted(next);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to update video progress:', err);
     }
@@ -67,20 +89,28 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
         quizCompleted: true,
         quizScore: score
       });
-      setProgress(prev => ({ ...prev, quizCompleted: true, quizScore: score }));
-      checkAllCompleted();
+      setProgress(prev => {
+        const next = { ...prev, quizCompleted: true, quizScore: score };
+        checkAllCompleted(next);
+        return next;
+      });
     } catch (err) {
       console.error('Failed to update quiz progress:', err);
     }
   };
 
-  const checkAllCompleted = () => {
-    const hasVideo = lessonData.type === 'video' || !!lessonData.videoUrl;
-    const hasQuiz = lessonData.type === 'quiz' || (!!lessonData.quiz && lessonData.quiz.questions && lessonData.quiz.questions.length > 0);
-    const videoComplete = !hasVideo || progress.videoCompleted;
-    const quizComplete = !hasQuiz || progress.quizCompleted;
-    if (videoComplete && quizComplete) {
-      onComplete && onComplete();
+  const handleExerciseComplete = async () => {
+    try {
+      await lessonService.updateLessonProgress(courseId, moduleId, lessonData._id, {
+        exerciseCompleted: true
+      });
+      setProgress(prev => {
+        const next = { ...prev, exerciseCompleted: true };
+        checkAllCompleted(next);
+        return next;
+      });
+    } catch (err) {
+      console.error('Failed to update exercise progress:', err);
     }
   };
 
@@ -120,6 +150,7 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
       video:   { icon: <Video className="w-3.5 h-3.5" />,    label: 'Video',    cls: 'bg-blue-500/15 text-blue-400 border-blue-500/25' },
       article: { icon: <FileText className="w-3.5 h-3.5" />, label: 'Reading',  cls: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25' },
       quiz:    { icon: <Book className="w-3.5 h-3.5" />,     label: 'Quiz',     cls: 'bg-amber-500/15 text-amber-400 border-amber-500/25' },
+      code:    { icon: <Code className="w-3.5 h-3.5" />,     label: 'Coding',   cls: 'bg-orange-500/15 text-orange-400 border-orange-500/25' },
     };
     const t = map[type] || { icon: <Zap className="w-3.5 h-3.5" />, label: 'Lesson', cls: 'bg-white/10 text-slate-400 border-amber-500/20' };
     return (
@@ -175,6 +206,17 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
           </div>
         );
 
+      case 'code':
+        return (
+          <CodeExercise
+            exerciseData={lessonData.codeExercise}
+            courseId={courseId}
+            moduleId={moduleId}
+            lessonId={lessonData._id}
+            onComplete={handleExerciseComplete}
+          />
+        );
+
       default:
         return (
           <div className="space-y-5">
@@ -217,6 +259,22 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
                 </div>
               </div>
             )}
+
+            {lessonData.codeExercise && (
+              <div>
+                <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
+                  <Code className="w-5 h-5 text-amber-400" />
+                  Coding Exercise
+                </h2>
+                <CodeExercise
+                  exerciseData={lessonData.codeExercise}
+                  courseId={courseId}
+                  moduleId={moduleId}
+                  lessonId={lessonData._id}
+                  onComplete={handleExerciseComplete}
+                />
+              </div>
+            )}
           </div>
         );
     }
@@ -247,6 +305,13 @@ const LessonContent = ({ lesson, courseId, moduleId, onComplete }) => {
               <Book className="w-3.5 h-3.5" />
               Quiz {progress.quizCompleted && `• ${progress.quizScore}%`}
               {progress.quizCompleted && <CheckCircle className="w-3.5 h-3.5" />}
+            </span>
+          )}
+          {lessonData.codeExercise && (
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${progress.exerciseCompleted ? 'text-emerald-400' : 'text-slate-500'}`}>
+              <Code className="w-3.5 h-3.5" />
+              Coding Exercise
+              {progress.exerciseCompleted && <CheckCircle className="w-3.5 h-3.5" />}
             </span>
           )}
         </div>
