@@ -8,6 +8,7 @@ const courseController = require('../controllers/courseController');
 
 const validate = require('../middleware/validationMiddleware');
 const { courseSchema } = require('../utils/schemas');
+const { tokenizeAndScore, callGemini } = require('../utils/aiAssistant');
 
 const router = express.Router();
 
@@ -664,78 +665,143 @@ router.post('/ask-assistant', protect, async (req, res) => {
       return res.status(400).json({ error: 'Query is required' });
     }
 
-    const lowercaseQuery = query.toLowerCase();
-    let responseText = '';
-
     // Get user enrollments so we can indicate courses they already joined
     const Enrollment = require('../models/Enrollment');
     const userEnrollments = await Enrollment.find({ user: userId }).select('course');
     const enrolledCourseIds = userEnrollments.map(e => e.course.toString());
 
-    // Determine category or search terms from query
-    let searchTopic = '';
-    if (lowercaseQuery.includes('python') || lowercaseQuery.includes('data')) {
-      searchTopic = 'Data';
-    } else if (lowercaseQuery.includes('web') || lowercaseQuery.includes('react') || lowercaseQuery.includes('javascript') || lowercaseQuery.includes('node') || lowercaseQuery.includes('html') || lowercaseQuery.includes('vue')) {
-      searchTopic = 'Web';
-    } else if (lowercaseQuery.includes('design') || lowercaseQuery.includes('ui') || lowercaseQuery.includes('ux') || lowercaseQuery.includes('figma')) {
-      searchTopic = 'Design';
-    } else if (lowercaseQuery.includes('security') || lowercaseQuery.includes('cissp') || lowercaseQuery.includes('cyber')) {
-      searchTopic = 'Security';
-    } else if (lowercaseQuery.includes('android') || lowercaseQuery.includes('kotlin') || lowercaseQuery.includes('mobile')) {
-      searchTopic = 'Android';
+    // Fetch all published courses to use as context
+    const allCourses = await Course.find({ status: 'published' }).populate('instructor', 'name');
+
+    const lowercaseQuery = query.toLowerCase();
+    const geminiKey = process.env.GEMINI_API_KEY;
+
+    // Check if the query contains a specific course ID (24-character hexadecimal)
+    const idMatch = query.match(/[a-f\d]{24}/i);
+    let targetCourse = null;
+    
+    if (idMatch) {
+      targetCourse = await Course.findById(idMatch[0]).populate('instructor', 'name');
     }
 
-    if (!searchTopic) {
-      // Try to find any word > 3 characters that is not a common stopword
-      const words = lowercaseQuery.split(/\s+/);
-      const stopwords = ['what', 'want', 'learn', 'show', 'find', 'some', 'course', 'courses', 'topic', 'about', 'need', 'there', 'have', 'your', 'website'];
-      const candidates = words.filter(w => w.length > 3 && !stopwords.includes(w));
-      if (candidates.length > 0) {
-        searchTopic = candidates[0].replace(/[^a-zA-Z]/g, ''); // strip punctuation
+    // If no ID match, check if query contains the title of any published course
+    if (!targetCourse) {
+      for (const c of allCourses) {
+        if (lowercaseQuery.includes(c.title.toLowerCase())) {
+          targetCourse = c;
+          break;
+        }
       }
     }
 
-    let recommendedCourses = [];
-    if (searchTopic) {
-      recommendedCourses = await Course.find({
-        status: 'published',
-        $or: [
-          { category: new RegExp(searchTopic, 'i') },
-          { title: new RegExp(searchTopic, 'i') },
-          { tags: new RegExp(searchTopic, 'i') }
-        ]
-      }).limit(5);
+    // If the user is asking about a specific course (matched by ID or title)
+    if (targetCourse) {
+      // 1. Try Gemini
+      if (geminiKey && geminiKey.trim() !== '' && !geminiKey.includes('your_gemini_api_key_here')) {
+        const modulesContext = (targetCourse.modules || []).map((m, mIdx) => 
+          `- Module ${mIdx + 1}: "${m.title}"\n  Lessons:\n${(m.lessons || []).map((l, lIdx) => `    * Lesson ${lIdx + 1}: "${l.title}"`).join('\n')}`
+        ).join('\n\n');
+
+        const systemInstruction = 
+          `You are the EduForge AI Learning Assistant. The user is asking about a specific course: "${targetCourse.title}" (Category: "${targetCourse.category}").\n` +
+          `Here is the course syllabus:\n${modulesContext}\n\n` +
+          `Description: "${targetCourse.description}"\n\n` +
+          `Guidelines:\n` +
+          `- Explain what is covered in this specific course, its modules, or duration.\n` +
+          `- If they ask to explain it, provide a nice overview of the course syllabus.\n` +
+          `- Keep your response under 150 words and use markdown.\n` +
+          `- Add *(You are already enrolled)* if the user has already enrolled (Enrolled: ${enrolledCourseIds.includes(targetCourse._id.toString())}).`;
+
+        const reply = await callGemini(query, systemInstruction);
+        if (reply) {
+          return res.json({ reply });
+        }
+      }
+
+      // 2. Fallback to Local NLP Course Info
+      console.log(`Using Local NLP to explain course: ${targetCourse.title}`);
+      const moduleList = (targetCourse.modules || []).map((m, idx) => `${idx + 1}. **${m.title}** (${m.lessons ? m.lessons.length : 0} lessons)`).join('\n');
+      const isEnrolled = enrolledCourseIds.includes(targetCourse._id.toString());
+      const enrollText = isEnrolled ? ' *(You are enrolled!)*' : '';
+      
+      const responseText = `Here is what is covered in **${targetCourse.title}**:${enrollText}\n\n` +
+        `**Category**: ${targetCourse.category || 'General'} | **Level**: ${targetCourse.level || 'Beginner'}\n` +
+        `**Description**: ${targetCourse.description}\n\n` +
+        `**Syllabus**:\n${moduleList || 'No modules listed.'}\n\n` +
+        (isEnrolled ? `You are already enrolled! You can access it from your dashboard.` : `You can search for this course in the **Explore Library** tab to enroll and start learning!`);
+
+      return res.json({ reply: responseText });
+    }
+
+    // 1. Try Live Gemini LLM Mode if key exists
+    if (geminiKey && geminiKey.trim() !== '' && !geminiKey.includes('your_gemini_api_key_here')) {
+      const coursesContext = allCourses.map(c => 
+        `- Course Title: "${c.title}"\n  ID: "${c._id}"\n  Category: "${c.category}"\n  Level: "${c.level}"\n  Instructor: "${c.instructor ? c.instructor.name : 'Mentor'}"\n  Description: "${c.description}"\n  Tags: [${(c.tags || []).join(', ')}]`
+      ).join('\n\n');
+
+      const systemInstruction = 
+        `You are the EduForge AI Learning Assistant. You help students find the best courses from our catalog.\n` +
+        `Here is our current course catalog:\n\n${coursesContext}\n\n` +
+        `Guidelines:\n` +
+        `- Evaluate the user's query and suggest the most relevant courses.\n` +
+        `- Explain briefly why each suggested course is a good fit.\n` +
+        `- If they are asking questions about what topics they should learn, answer them and link it back to our courses.\n` +
+        `- Be friendly, conversational, and direct. Keep your answer under 150 words.\n` +
+        `- Use markdown list formatting for courses. Add *(You are already enrolled)* if the user has already enrolled (Enrolled IDs: ${enrolledCourseIds.join(', ')}).`;
+
+      const reply = await callGemini(query, systemInstruction);
+      if (reply) {
+        return res.json({ reply });
+      }
+    }
+
+    // 2. Fallback to Local Intelligent NLP Mode
+    console.log('Using Local NLP matching for global course assistant...');
+    
+    // Rank all courses based on relevance score
+    const scoredCourses = allCourses.map(course => {
+      const docText = `${course.description} ${course.category || ''}`;
+      const score = tokenizeAndScore(query, docText, course.title, course.tags);
+      return { course, score };
+    });
+
+    // Filter courses with score > 0 and sort desc
+    const matches = scoredCourses
+      .filter(item => item.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    let finalRecommendations = [];
+    let isFilteredByQuery = false;
+
+    if (matches.length > 0) {
+      finalRecommendations = matches.slice(0, 3).map(item => item.course);
+      isFilteredByQuery = true;
     } else {
-      // Return a general mix of published courses the user is not enrolled in
-      recommendedCourses = await Course.find({
-        status: 'published',
-        _id: { $nin: enrolledCourseIds }
-      }).limit(3);
-
-      if (recommendedCourses.length < 3) {
-        recommendedCourses = await Course.find({ status: 'published' }).limit(3);
+      // If no matches, return trending courses the user is not yet enrolled in
+      finalRecommendations = allCourses
+        .filter(c => !enrolledCourseIds.includes(c._id.toString()))
+        .slice(0, 3);
+      if (finalRecommendations.length === 0) {
+        finalRecommendations = allCourses.slice(0, 3);
       }
     }
 
-    if (recommendedCourses.length > 0) {
-      const coursesList = recommendedCourses.map(c => {
-        const isEnrolled = enrolledCourseIds.includes(c._id.toString());
-        const enrollText = isEnrolled ? ' *(You are enrolled!)*' : '';
-        return `• **${c.title}**${enrollText}\n  *Category: ${c.category || 'General'} | Level: ${c.level || 'Beginner'}*`;
-      }).join('\n');
+    const coursesList = finalRecommendations.map(c => {
+      const isEnrolled = enrolledCourseIds.includes(c._id.toString());
+      const enrollText = isEnrolled ? ' *(You are enrolled!)*' : '';
+      return `• **${c.title}**${enrollText}\n  *Category: ${c.category || 'General'} | Level: ${c.level || 'Beginner'}*`;
+    }).join('\n');
 
-      if (searchTopic) {
-        responseText = `Yes, we have some excellent courses matching **${searchTopic}**! Here are the top matches:\n\n${coursesList}\n\nYou can head over to the **Explore Library** tab to sign up and start learning right away!`;
-      } else {
-        responseText = `Here are some popular learning tracks available on our platform:\n\n${coursesList}\n\nWhat topics are you looking to study? Tell me, and I will recommend the best fit for your goals!`;
-      }
+    let responseText = '';
+    if (isFilteredByQuery) {
+      responseText = `I analyzed our library catalog and found some great matches for your query:\n\n${coursesList}\n\nYou can head over to the **Explore Library** tab to sign up and start learning right away!`;
     } else {
-      responseText = `I couldn't find any courses matching "**${searchTopic || query}**" in our library right now. \n\nHowever, we are constantly adding new learning modules! Please check out the **Explore Library** page to see all of our active courses.`;
+      responseText = `I couldn't find any courses exactly matching your search query. However, here are some popular learning tracks available on our platform that you might like:\n\n${coursesList}\n\nWhat topics are you looking to study? Tell me, and I will recommend the best fit for your goals!`;
     }
 
-    res.json({ reply: responseText });
+    return res.json({ reply: responseText });
   } catch (err) {
+    console.error('Error in global ask-assistant:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -770,12 +836,35 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
     const courseTitle = course.title;
     const courseCategory = course.category || 'General';
     const modules = course.modules || [];
-
-    // Let's create an intelligent, context-aware simulated AI response
-    let responseText = '';
     const lowercaseQuery = query.toLowerCase();
 
-    // 1. Check if user is asking about progress
+    // 1. Try Live Gemini LLM Mode if key exists
+    const geminiKey = process.env.GEMINI_API_KEY;
+    if (geminiKey && geminiKey.trim() !== '' && !geminiKey.includes('your_gemini_api_key_here')) {
+      const modulesContext = modules.map((m, mIdx) => 
+        `- Module ${mIdx + 1}: "${m.title}"\n  Lessons:\n${(m.lessons || []).map((l, lIdx) => `    * Lesson ${lIdx + 1}: "${l.title}"`).join('\n')}`
+      ).join('\n\n');
+
+      const systemInstruction = 
+        `You are EduForge Copilot, an AI Study Buddy helping a student who is currently taking the course "${courseTitle}" (Category: "${courseCategory}").\n\n` +
+        `Here is the course syllabus:\n${modulesContext}\n\n` +
+        `The student's current progress is at ${enrollment ? enrollment.progressPercentage : 0}%.\n\n` +
+        `Guidelines:\n` +
+        `- Answer their questions about the course material, syllabus, progress, or certificates accurately using the context.\n` +
+        `- If they ask a technical question, provide clear, easy-to-understand explanations and include code examples in markdown syntax where appropriate.\n` +
+        `- Be friendly, encouraging, and supportive. Keep your answer focused and concise (under 200 words).`;
+
+      const reply = await callGemini(query, systemInstruction);
+      if (reply) {
+        return res.json({ reply, timestamp: new Date() });
+      }
+    }
+
+    // 2. Fallback to Local Intelligent NLP Mode
+    console.log('Using Local NLP matching for course-specific study buddy...');
+    let responseText = '';
+
+    // Check query for specific intents first (progress, syllabus, certificates, recommendations of other courses)
     if (lowercaseQuery.includes('progress') || lowercaseQuery.includes('complete') || lowercaseQuery.includes('how far')) {
       if (enrollment) {
         const completedCount = enrollment.completedLessons ? enrollment.completedLessons.length : 0;
@@ -784,20 +873,10 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
         responseText = `I couldn't find an active enrollment for you in **${courseTitle}**. Please make sure you are enrolled!`;
       }
     }
-    // 2. Check if user is asking for syllabus or modules
     else if (lowercaseQuery.includes('modules') || lowercaseQuery.includes('syllabus') || lowercaseQuery.includes('chapters') || lowercaseQuery.includes('lessons')) {
       const moduleList = modules.map((m, idx) => `${idx + 1}. **${m.title}** (${m.lessons ? m.lessons.length : 0} lessons)`).join('\n');
       responseText = `Here is the course syllabus for **${courseTitle}**:\n\n${moduleList || 'No modules available yet.'}\n\nWhich module would you like to dive into?`;
     }
-    // 3. Check if user is asking for a code example
-    else if (lowercaseQuery.includes('code') || lowercaseQuery.includes('example') || lowercaseQuery.includes('snippet') || lowercaseQuery.includes('write')) {
-      if (courseCategory.toLowerCase().includes('data') || courseTitle.toLowerCase().includes('data') || courseTitle.toLowerCase().includes('python')) {
-        responseText = `Here is a Python code example relating to data science and analytics:\n\n\`\`\`python\nimport pandas as pd\nimport numpy as np\n\n# Create a sample DataFrame\ndata = {\n    'Student': ['Alice', 'Bob', 'Charlie'],\n    'Score': [85, 92, 78]\n}\ndf = pd.DataFrame(data)\n\n# Calculate class average\naverage_score = df['Score'].mean()\nprint(f"Class average: {average_score:.2f}")\n\`\`\``;
-      } else {
-        responseText = `Here is a JavaScript example demonstrating async data fetching from a MERN API:\n\n\`\`\`javascript\nasync function fetchCourseProgress(courseId) {\n  try {\n    const response = await fetch(\`/api/courses/\${courseId}/progress\`);\n    const data = await response.json();\n    console.log("Progress:", data.percentage + "%");\n  } catch (error) {\n    console.error("Failed to load progress:", error);\n  }\n}\n\`\`\``;
-      }
-    }
-    // 4. Check if user asks for certificate
     else if (lowercaseQuery.includes('certificate') || lowercaseQuery.includes('verify')) {
       if (enrollment && enrollment.progressPercentage === 100) {
         responseText = `Congratulations! You have completed 100% of the course. You are eligible to generate your certificate. Click on the **Claim Certificate** button in the dashboard to generate and download your PDF.`;
@@ -806,8 +885,8 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
         responseText = `You are currently at **${enrollment ? enrollment.progressPercentage : 0}%** completion. You need to complete all modules and lessons (${remaining}% remaining) to unlock your certificate of completion!`;
       }
     }
-    // 5. Check if user is asking for course recommendations / recommendations of other courses
-    else if (lowercaseQuery.includes('recommend') || lowercaseQuery.includes('suggest') || lowercaseQuery.includes('other course') || lowercaseQuery.includes('find a course') || lowercaseQuery.includes('looking for a course') || lowercaseQuery.includes('another course') || lowercaseQuery.includes('what else') || lowercaseQuery.includes('learn python') || lowercaseQuery.includes('learn web') || lowercaseQuery.includes('learn design')) {
+    else if (lowercaseQuery.includes('recommend') || lowercaseQuery.includes('suggest') || lowercaseQuery.includes('other course') || lowercaseQuery.includes('another course') || lowercaseQuery.includes('what else')) {
+      // Recommend other courses in the catalog
       let searchTopic = '';
       if (lowercaseQuery.includes('python') || lowercaseQuery.includes('data')) {
         searchTopic = 'Data';
@@ -820,7 +899,7 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
       let recommendedCourses = [];
       if (searchTopic) {
         recommendedCourses = await Course.find({
-          _id: { $ne: courseId }, // don't recommend the current course
+          _id: { $ne: courseId },
           status: 'published',
           $or: [
             { category: new RegExp(searchTopic, 'i') },
@@ -829,7 +908,6 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
           ]
         }).limit(3);
       } else {
-        // Fallback to recommending some trending courses
         recommendedCourses = await Course.find({
           _id: { $ne: courseId },
           status: 'published'
@@ -837,20 +915,61 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
       }
 
       if (recommendedCourses.length > 0) {
-        const coursesList = recommendedCourses.map(c => `• **${c.title}** (Instructor: ${c.instructor ? 'Instructor' : 'Mentor'}, Category: ${c.category || 'General'})`).join('\n');
-        responseText = `Yes! We have some great courses on that topic in our library. Here are some recommendations you might like:\n\n${coursesList}\n\nYou can click on the **Explore Library** page in the navigation bar to enroll in them!`;
+        const coursesList = recommendedCourses.map(c => `• **${c.title}** (*Category: ${c.category || 'General'}*)`).join('\n');
+        responseText = `Yes! We have some other great courses on our platform. Here are some recommendations you might like:\n\n${coursesList}\n\nYou can click on the **Explore Library** tab to enroll in them!`;
       } else {
-        responseText = `Currently, we don't have other courses on that specific topic, but you can check out all our catalog by going to the **Explore Library** section!`;
+        responseText = `Currently, we don't have other courses on that specific topic, but you can check out all our catalog by going to the **Explore Library** page!`;
       }
     }
-    // 6. General intelligent response based on category
     else {
-      if (courseCategory.toLowerCase().includes('data') || courseTitle.toLowerCase().includes('data')) {
-        responseText = `As your study buddy for **${courseTitle}**, I can help you understand data visualization, data manipulation with libraries like Pandas, and key data science algorithms.\n\nCould you clarify if you'd like to talk about data analysis principles, plotting libraries, or help with a specific lesson quiz?`;
-      } else if (courseCategory.toLowerCase().includes('web') || courseTitle.toLowerCase().includes('javascript') || courseTitle.toLowerCase().includes('react')) {
-        responseText = `As your study buddy for **${courseTitle}**, I'm ready to help you with full-stack web development, MERN architecture (MongoDB, Express, React, Node.js), state management, or REST APIs.\n\nWould you like me to explain a concept from one of the modules or draft a code example?`;
-      } else {
-        responseText = `Welcome! I am your AI Study Buddy for **${courseTitle}** (${courseCategory}). I can help you understand the topics covered, write practice exercises, explain difficult concepts, or prepare for the quizzes.\n\nWhat topic or module can we review together today?`;
+      // Run NLP matching against syllabus modules and lessons to find relevant content
+      let bestMatch = null;
+      let highestScore = 0;
+
+      modules.forEach((mod, mIdx) => {
+        const modScore = tokenizeAndScore(lowercaseQuery, mod.description || '', mod.title);
+        if (modScore > highestScore) {
+          highestScore = modScore;
+          bestMatch = { type: 'module', title: mod.title, index: mIdx + 1 };
+        }
+
+        if (mod.lessons) {
+          mod.lessons.forEach((les, lIdx) => {
+            const lesScore = tokenizeAndScore(lowercaseQuery, les.content || les.description || '', les.title);
+            if (lesScore > highestScore) {
+              highestScore = lesScore;
+              bestMatch = { 
+                type: 'lesson', 
+                title: les.title, 
+                moduleTitle: mod.title, 
+                moduleIndex: mIdx + 1, 
+                lessonIndex: lIdx + 1 
+              };
+            }
+          });
+        }
+      });
+
+      if (highestScore > 1.5 && bestMatch) {
+        if (bestMatch.type === 'lesson') {
+          responseText = `I searched this course's syllabus and found a relevant lesson that matches your query:\n` +
+            `• **Lesson ${bestMatch.lessonIndex} - "${bestMatch.title}"** inside **Module ${bestMatch.moduleIndex} ("${bestMatch.moduleTitle}")**.\n\n` +
+            `Please check out that lesson to find exactly what you are looking for! Let me know if you have any questions about its contents.`;
+        } else {
+          responseText = `I scanned the course syllabus and found a relevant module matching your query:\n` +
+            `• **Module ${bestMatch.index} - "${bestMatch.title}"**.\n\n` +
+            `This module covers concepts related to your query. You can click on this module in the sidebar checklist to begin reading its lessons!`;
+        }
+      } 
+      // If no module/lesson overlap, return general category response with a code snippet
+      else {
+        if (courseCategory.toLowerCase().includes('data') || courseTitle.toLowerCase().includes('data') || courseTitle.toLowerCase().includes('python')) {
+          responseText = `As your study buddy for **${courseTitle}**, I can help you with Python, pandas dataframes, data plots, or statistics.\n\nHere is a quick Python example for data manipulation:\n\n\`\`\`python\nimport pandas as pd\ndf = pd.read_csv('data.csv')\nprint(df.describe()) # summarizes numeric stats\n\`\`\`\n\nWhat specific part of this course can we review next?`;
+        } else if (courseCategory.toLowerCase().includes('web') || courseTitle.toLowerCase().includes('javascript') || courseTitle.toLowerCase().includes('react')) {
+          responseText = `As your study buddy for **${courseTitle}**, I'm ready to help you with JavaScript, React components, state/hooks, or REST APIs.\n\nHere is a simple React functional component template:\n\n\`\`\`javascript\nimport React, { useState } from 'react';\n\nfunction Counter() {\n  const [count, setCount] = useState(0);\n  return <button onClick={() => setCount(count + 1)}>Count: {count}</button>;\n}\n\`\`\`\n\nIs there a specific lesson exercise or quiz question you need help with?`;
+        } else {
+          responseText = `Welcome! I am your AI Study Buddy for **${courseTitle}**. I can help you understand the topics covered, write practice exercises, explain difficult concepts, or prepare for the quizzes.\n\nWhat topic or module can we review together today?`;
+        }
       }
     }
 
@@ -859,6 +978,7 @@ router.post('/:courseId/ask-assistant', protect, async (req, res) => {
       timestamp: new Date()
     });
   } catch (err) {
+    console.error('Error in course-specific ask-assistant:', err);
     res.status(500).json({ error: err.message });
   }
 });
